@@ -1,0 +1,217 @@
+---
+title: "Final Project – Group Work"
+author: "Uriel Ulloa, Jonida Qira, Jordyn Labbe, Ryan Le"
+date: "2025-05-05"
+output:
+  html_document: default
+  word_document: default
+---
+
+# Analyzing Cars Features to Predict their Prices 
+## A Regression Based Approach Using UCI Data 
+
+
+##  1: Data Loading
+#### In this section we load the required data set directly from the source using an URL. 
+
+```{r load the required data}
+
+# Load necessary libraries
+library(tidyverse)  
+library(readr)
+library(ggplot2)
+
+# Define column names
+column_names <- c(
+  "symboling", "normalized_losses", "make", "fuel_type", "aspiration",
+  "num_doors", "body_style", "drive_wheels", "engine_location",
+  "wheel_base", "length", "width", "height", "curb_weight",
+  "engine_type", "num_cylinders", "engine_size", "fuel_system",
+  "bore", "stroke", "compression_ratio", "horsepower", "peak_rpm",
+  "city_mpg", "highway_mpg", "price"
+)
+
+# Load the dataset using from the UCI URL
+url <- "https://archive.ics.uci.edu/ml/machine-learning-databases/autos/imports-85.data"
+auto_data <- read_csv(url, col_names = column_names, na = "?")
+
+```
+
+
+## 2: Data Cleansing
+#### The following section explains how we cleaned the data through re-adjusting the data type and dropping any rows with missing data. 
+
+``` {r section2 data cleansing}
+
+# Convert appropriate columns to numeric
+numeric_cols <- c("normalized_losses", "bore", "stroke", "horsepower", 
+                  "peak_rpm", "price")
+auto_data[numeric_cols] <- lapply(auto_data[numeric_cols], as.numeric)
+
+# Drop rows with missing price
+auto_data_clean <- auto_data %>% drop_na(price)
+
+# Convert categorical variables to factors
+auto_data_clean <- auto_data_clean %>%
+  mutate(across(c(make, fuel_type, aspiration, num_doors, body_style,
+                  drive_wheels, engine_location, engine_type,
+                  num_cylinders, fuel_system), as.factor))
+
+```
+
+## 3: Exploratory Analysis (Response variable)
+#### A closer look of response variable distribution is required. We perform this analysis visually by plotting a histogram and boxplot of the Price variable. 
+
+``` {r exploratory analysis}
+
+hist(auto_data_clean$price,
+     breaks = 20,               
+     col = "skyblue",            
+     border = "white",          
+     main = "Distribution of Car Prices",
+     xlab = "Price (USD)",
+     ylab = "Frequency")
+
+boxplot(auto_data_clean$price,
+        main = "Boxplot of Vehicle Prices",
+        ylab = "Price (USD)",
+        col = "skyblue",
+        border = "black",
+        horizontal = FALSE,
+        cex.main = 1.2,
+        cex.lab = 1.1)
+```
+
+## 4: Variables Selection (Correlation)
+#### To start our analysis we decide to explore the relationship between the reponse variable (Price) and each preditors, in order to select which variables to include in the model.
+
+``` {r relationship analysis}
+# Select numeric columns
+numeric_data <- auto_data_clean %>% select(where(is.numeric))
+
+# Calculate correlations with 'price' only
+cor_with_price <- cor(numeric_data, use = "complete.obs")[, "price"]
+
+# View correlations (excluding price-to-price which is always 1)
+cor_with_price <- cor_with_price[names(cor_with_price) != "price"]
+
+# Display result
+print(cor_with_price)
+
+```
+
+## 5: Variables Selection (Scatter Plot)
+#### Following the same line, we decided to graphically validate the linear relationship of the response variable (Price) and each numerical predictor. 
+
+
+``` {r scatterplot analysis}
+# Separate numeric and categorical predictors
+numeric_vars <- auto_data_clean %>% 
+  select(where(is.numeric)) %>% 
+  select(-price) %>% 
+  names()
+
+categorical_vars <- auto_data_clean %>% 
+  select(where(is.factor)) %>% 
+  names()
+
+# Loop over each numeric variable to create scatter plots
+for (var in numeric_vars) {
+  p <- ggplot(auto_data_clean, aes_string(x = var, y = "price")) +
+    geom_point(alpha = 0.6, color = "steelblue") +
+    geom_smooth(method = "lm", se = FALSE, color = "red") +
+    labs(title = paste("Scatter Plot: Price vs", var),
+         x = var, y = "Price") +
+    theme_minimal()
+  print(p)
+}
+
+# Ensure categorical variables are treated as factors
+auto_data_clean <- auto_data_clean %>%
+  mutate(across(where(is.character), as.factor))
+
+# Define quantitative variables to include
+quant_vars <- c("wheel_base", "length", "width", "curb_weight", 
+                "engine_size", "bore", "horsepower", "city_mpg", 
+                "highway_mpg", "peak_rpm")
+# Identify qualitative variables (factors)
+qual_vars <- auto_data_clean %>% 
+  select(where(is.factor)) %>% 
+  names()
+
+```
+
+
+## 6: Categorical Variable Selection
+#### Using to many categorical variables, specially the ones with many levels could lead to an overfitting of the model, to avoid this we decide to remove from the model the variables "make" and "fuel system" 
+
+``` {r categorical variables selection}
+# Identify qualitative variables (factors) and remove 'make' and 'fuel system'
+qual_vars <- auto_data_clean %>% 
+  select(where(is.factor)) %>% 
+  names() %>%
+    setdiff(c("make", "fuel_system"))  # exclude 'make'
+
+# Build formula as a string
+formula_str <- paste("price ~", paste(c(quant_vars, qual_vars), collapse = " + "))
+
+```
+
+## 7: Regression Model
+#### We run the regression model to evaluate the relationship between the selected predictor variables and the response variable (Price), observer their significancy and check the validity of the model.
+
+``` {r Regression model}
+# Fit the linear model
+reg_model <- lm(as.formula(formula_str), data = auto_data_clean)
+
+# View summary of the model
+summary(reg_model)
+
+# Residual Standard Error (RSE) from the model summary
+rse <- summary(reg_model)$sigma
+
+# Mean of the actual response variable
+mean_price <- mean(auto_data_clean$price, na.rm = TRUE)
+
+# Coefficient of Variation (as a percentage)
+cv <- (rse / mean_price) * 100
+
+# Print the result
+cat("Coefficient of Variation (CV):", round(cv, 2), "%\n")
+```
+
+## 8: Residual Analysis 
+#### Graphically identify the limitations of the model conducted to provide recommendations accordingly. 
+
+```{r Residual Analysis}
+plot(reg_model, 1)
+plot(reg_model, 2)
+plot(reg_model, 3)
+plot(reg_model, 4)
+plot(reg_model, 5)
+plot(reg_model, 6)
+par(mfrow = c(2, 3)) 
+plot(reg_model, 1:6)
+```
+
+## 9: Actual vs Predicted Prices - ScatterPlot
+#### Validate the efficiency of the model with a scatterplot of the actual prices versus the predicted priced. 
+``` {r Actual prices vs predicted prices scatterplot}
+# Create the same dataset used to fit the model
+model_data <- model.frame(reg_model)  
+
+# Add predictions to this dataset
+model_data$predicted_price <- predict(reg_model)
+
+# Plot: Actual vs Predicted Prices
+library(ggplot2)
+ggplot(model_data, aes(x = predicted_price, y = price)) +
+  geom_point(color = "steelblue", alpha = 0.7) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Actual vs Predicted Prices",
+       x = "Predicted Price",
+       y = "Actual Price") +
+  theme_minimal()
+
+
+```
